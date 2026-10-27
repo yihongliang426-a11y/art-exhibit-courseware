@@ -433,7 +433,8 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
       <li>🖱 <b>旋转视角</b>：按住左键拖动</li>
       <li>🔍 <b>缩放</b>：滚轮</li>
       <li>✋ <b>平移</b>：右键拖动</li>
-      <li>🎯 <b>探访点位</b>：点击校园里的彩色圆点，镜头会飞过去</li>
+      <li>🎯 <b>探访点位</b>：点击彩色圆点，或用左侧「校园导航」直达</li>
+      <li>⚡ <b>快速前往</b>：<b>右键点校园任意位置</b>，视角立刻切过去</li>
       <li>🗺 <b>小地图</b>：右上角按钮查看校园平面图</li>
       <li>⟲ <b>返回全景</b>：随时回到鸟瞰整个校园</li>
     </ul>
@@ -11277,7 +11278,7 @@ window.CW = window.CW || {};
 
   /* ================= 校园组装 ================= */
   var campus = new THREE.Group(); campus.name = 'campus';
-  campus.rotation.y = THREE.MathUtils.degToRad(-12);
+  campus.rotation.y = THREE.MathUtils.degToRad(-18);
   scene.add(campus);
   /* 保底草皮：全局兜底，杜绝任何区域露出天空蓝底 */
   var baseGrass = new THREE.Mesh(new THREE.PlaneGeometry(210, 170),
@@ -11289,7 +11290,7 @@ window.CW = window.CW || {};
   var HS = [
     { id: 'frontgate', name: '前校门·迎宾展区', pos: [0, 0.5, -56], off: [-3.8, 10, 17.6] },
     { id: 'hall',      name: '中央大厅·主题展',  pos: [0, 0.5, -30], off: [-4.5, 7, 15] },
-    { id: 'library',   name: '图书馆·书香画展',  pos: [10.5, 0.5, -36], off: [2.9, 2.6, -11.6] },
+    { id: 'library',   name: '图书馆·书香画展',  pos: [10.5, 0.5, -36], off: [-9, 7.5, -9] },
     { id: 'academic',  name: '学术厅·开幕讲堂',  pos: [30, 0.5, -45], off: [-2.2, 4.1, -8.6] },
     { id: 'greenbelt', name: '楼间绿廊·展板长廊', pos: [0, 0.5, -6],  off: [-4.2, 3.6, 19.6] },
     { id: 'windhall',  name: '风雨操场·环形大展', pos: [36, 0.5, 20], off: [9, 4.5, 9] },
@@ -11492,7 +11493,7 @@ window.CW = window.CW || {};
     var t = $('#hint'); t.innerHTML = msg; t.style.opacity = 1;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { t.style.opacity = 0; }, ms || 2600);
-    setTimeout(function () { t.innerHTML = '🖱 拖动旋转 · 滚轮缩放 · <b>点击彩色圆点探访画展点位</b>'; t.style.opacity = 1; }, (ms || 2600) + 400);
+    setTimeout(function () { t.innerHTML = '🖱 左键拖动旋转 · <b>左键点圆点探访</b> · <b>右键点地面快速前往</b> · 滚轮缩放'; t.style.opacity = 1; }, (ms || 2600) + 400);
   }
 
   /* ================= 校园导航面板（点名字直达） ================= */
@@ -11531,6 +11532,40 @@ window.CW = window.CW || {};
     });
     return bd < 30 ? best : null;
   }
+
+  /* ================= 右键快速切换：右键点哪里视角就切到哪里 ================= */
+  var rmb = null;
+  renderer.domElement.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  renderer.domElement.addEventListener('pointerdown', function (e) {
+    if (e.button === 2) rmb = { x: e.clientX, y: e.clientY, t: Date.now() };
+  });
+  renderer.domElement.addEventListener('pointerup', function (e) {
+    if (e.button !== 2 || !rmb) return;
+    var moved = Math.abs(e.clientX - rmb.x) + Math.abs(e.clientY - rmb.y);
+    var held = Date.now() - rmb.t;
+    rmb = null;
+    if (moved > 6 || held > 600) return;          // 拖动=平移，不算切换
+    mouse.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    ray.setFromCamera(mouse, camera);
+    var hits = ray.intersectObjects(campus.children, true);
+    for (var i = 0; i < hits.length; i++) {
+      var o = hits[i].object, isMarker = false, walk = o;
+      while (walk) { if (walk.userData && walk.userData.hs) { isMarker = true; break; } walk = walk.parent; }
+      if (isMarker) continue;                     // 标记走左键热点逻辑
+      var pt = hits[i].point;
+      if (pt.y > 14) continue;                    // 忽略高空误命中
+      /* 快速切换：保持当前观察方位角，相机落到该点后方12~18m、高5~9m，0.75s滑入 */
+      var dir = new THREE.Vector3().subVectors(camera.position, controls.target);
+      dir.y = 0;
+      if (dir.lengthSq() < 0.01) dir.set(0, 0, 1);
+      dir.normalize();
+      var dist = Math.max(12, Math.min(18, camera.position.distanceTo(controls.target)));
+      var np = pt.clone().add(dir.multiplyScalar(dist));
+      np.y = Math.min(13, Math.max(4.5, pt.y + dist * 0.42));
+      flyTo([np.x, np.y, np.z], [pt.x, Math.max(1, pt.y + 0.5), pt.z], 0.75);
+      break;
+    }
+  });
 
   /* ================= 点击拾取 ================= */
   var ray = new THREE.Raycaster(); var mouse = new THREE.Vector2();
