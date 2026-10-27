@@ -70,6 +70,13 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   transition: all .2s;
 }
 #tools button:hover { border-color: var(--blue); background: #f2f9ff; }
+#btnRMB { font-weight: 600; }
+#btnRMB.rmb-on {
+  background: linear-gradient(180deg, var(--green), #5da851); color: #fff;
+  border-color: transparent; box-shadow: 0 3px 10px rgba(93,168,81,.4);
+}
+#btnRMB.rmb-off { color: var(--ink2); }
+#btnRMB.rmb-off::after { content: " ⃠"; }
 
 /* ---------------- 知识卡面板 ---------------- */
 #panel {
@@ -358,6 +365,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
     <button class="step" data-step="5"><b>⑤</b>课堂总结</button>
   </nav>
   <nav id="tools">
+    <button id="btnRMB" class="rmb-on" title="开启后：右键点校园任意位置，视角立刻切过去">🖱 快速前往</button>
     <button id="btnTour" title="自动巡游">▶ 巡游</button>
     <button id="btnMap" title="校园平面小地图">🗺 小地图</button>
     <button id="btnReset" title="返回全景">⟲ 全景</button>
@@ -11535,6 +11543,13 @@ window.CW = window.CW || {};
 
   /* ================= 右键快速切换：右键点哪里视角就切到哪里 ================= */
   var rmb = null;
+  state.rmbNav = true;                            /* 可见模式按钮控制（默认开） */
+  $('#btnRMB').addEventListener('click', function () {
+    state.rmbNav = !state.rmbNav;
+    this.classList.toggle('rmb-on', state.rmbNav);
+    this.classList.toggle('rmb-off', !state.rmbNav);
+    toast(state.rmbNav ? '⚡ 快速前往已开启：<b>右键点地面</b>，视角立刻切过去' : '快速前往已关闭（右键恢复平移）', 3000);
+  });
   renderer.domElement.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   renderer.domElement.addEventListener('pointerdown', function (e) {
     if (e.button === 2) rmb = { x: e.clientX, y: e.clientY, t: Date.now() };
@@ -11544,7 +11559,7 @@ window.CW = window.CW || {};
     var moved = Math.abs(e.clientX - rmb.x) + Math.abs(e.clientY - rmb.y);
     var held = Date.now() - rmb.t;
     rmb = null;
-    if (moved > 6 || held > 600) return;          // 拖动=平移，不算切换
+    if (moved > 6 || held > 600 || !state.rmbNav) return;  // 拖动=平移；开关关闭则不切换
     mouse.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
     ray.setFromCamera(mouse, camera);
     var hits = ray.intersectObjects(campus.children, true);
