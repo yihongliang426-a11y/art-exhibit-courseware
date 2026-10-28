@@ -10053,6 +10053,35 @@ CW.mods.exhibits = function (ctx) {
   /* 开幕氛围：海报+花盆（红毯花柱因GLB坡道旗杆区冲突移除） */
   g.add(ac);
 
+
+  /* ---------- 学术厅内景：观众席+舞台+讲台（照片复刻：报告厅排排坐） ---------- */
+  (function () {
+    var ax = 16, az = -44;   // 学术厅中心(three)
+    var intG = new THREE.Group(); intG.name = '学术厅内景';
+    // 厅内地坪
+    var floor = new THREE.Mesh(new THREE.BoxGeometry(12, 0.06, 11), M.std(0xd8cbb8, 0.9));
+    floor.position.set(ax, 0.05, az); floor.receiveShadow = true; intG.add(floor);
+    // 舞台（南端）
+    var stage = new THREE.Mesh(new THREE.BoxGeometry(9, 0.55, 2.6), M.std(0x8a5a3a, 0.75));
+    stage.position.set(ax, 0.3, az - 4.2); stage.castShadow = true; intG.add(stage);
+    var podium = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.15, 0.55), M.std(0x6b4a32, 0.7));
+    podium.position.set(ax - 1.6, 0.6, az - 3.6); intG.add(podium);
+    // 观众席 4排×10座
+    var seatG = new THREE.BoxGeometry(0.52, 0.5, 0.52);
+    var seatM = M.std(0x7a94b8, 0.75);
+    for (var rr = 0; rr < 4; rr++) {
+      for (var cc = 0; cc < 10; cc++) {
+        var seat = new THREE.Mesh(seatG, seatM);
+        seat.position.set(ax - 4.5 + cc, 0.28 + rr * 0.42, az - 1 + rr * 0.9);
+        intG.add(seat);
+      }
+    }
+    // 厅内点光×2（照亮观众席与舞台）
+    var il1 = new THREE.PointLight(0xfff0d8, 2.4, 24, 1.0); il1.position.set(ax - 3, 5.2, az - 2); intG.add(il1);
+    var il2 = new THREE.PointLight(0xfff0d8, 2.4, 24, 1.0); il2.position.set(ax + 3, 5.2, az + 2); intG.add(il2);
+    g.add(intG);
+  })();
+
   return g;
 };
 </script>
