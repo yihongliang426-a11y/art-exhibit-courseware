@@ -11415,7 +11415,17 @@ window.CW = window.CW || {};
           }
         });
         root.name = 'glb_' + g;
-        campus.add(root);
+        if (g === 'sports') {
+          /* 操场正放：在斜排campus内反向旋转抵消（绕跑道中心63,12） */
+          var sg = new THREE.Group();
+          sg.position.set(63, 0, 12);
+          root.position.set(-63, 0, -12);
+          sg.rotation.y = THREE.MathUtils.degToRad(25);
+          sg.add(root);
+          campus.add(sg);
+        } else {
+          campus.add(root);
+        }
         left--; if (left === 0) done();
       }, function (err) { console.error('[glb:' + g + ']', err); left--; if (left === 0) done(); });
     });
