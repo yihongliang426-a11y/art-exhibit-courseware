@@ -6903,9 +6903,9 @@ CW.mods.ground = function (ctx) {
 
   /* ① 主轴：前校门 → 校前广场 → 大厅前 */
   roadSeg(0, -61.5, 0, -49, 4.5);                // 门内接广场(止于景墙)
-  roadSeg(-6.5, -49, -6.5, -14, 2.5);            // 景墙西支→大厅西门
-roadSeg(6.5, -49, 6.5, -7.5, 2.5);             // 景墙东支→大厅南门
-roadSeg(-6.5, -14, -6.5, -7.5, 2.5);           // 西支末端(大厅西门)
+  roadSeg(-6.5, -49, -6.5, -19.5, 2.5);          // 景墙西支(止于大厅西北角)
+roadSeg(5, -49, 5, -7.5, 2.5);                 // 景墙东支(走大厅/翼E之间走廊)
+
   var padFC = box(11, CFG.roadH, 2.8, new THREE.MeshStandardMaterial({ map: padTex(5.5, 1.4), roughness: 0.93 }), 0, 0, -52, false);
   padFC.receiveShadow = true; g.add(padFC);      // 大厅/学术厅门前小广场
   /* 中央大道 x=0 宽5（z -28..33，南端接园径走廊） */
@@ -9953,9 +9953,9 @@ CW.mods.exhibits = function (ctx) {
   if (CW.GLB_FILES && (CW.GLB_FILES.buildings || CW.GLB_FILES.public)) {
     var hall = new THREE.Group(); hall.position.set(0, 0.2, -8); // 大厅中心（销轮枢纽）
     /* 厅内暖光两盏（照亮北墙主题展墙） */
-    var pl1 = new THREE.PointLight(0xfff0d8, 1.6, 28, 1.1); pl1.position.set(-4, 5.4, -33); hall.add(pl1);
-    var pl2 = new THREE.PointLight(0xfff0d8, 1.6, 28, 1.1); pl2.position.set(4, 5.4, -33); hall.add(pl2);
-    var pl3 = new THREE.PointLight(0xfff0d8, 1.2, 22, 1.1); pl3.position.set(0, 4.6, -29); hall.add(pl3);
+    var pl1 = new THREE.PointLight(0xfff0d8, 2.88, 28, 1.1); pl1.position.set(-2.5, 4.8, -4); hall.add(pl1);
+    var pl2 = new THREE.PointLight(0xfff0d8, 2.88, 28, 1.1); pl2.position.set(2.5, 4.8, -4); hall.add(pl2);
+    var pl3 = new THREE.PointLight(0xfff0d8, 2.16, 22, 1.1); pl3.position.set(0, 4.5, -8); hall.add(pl3);
     // 北墙主题展墙(GLB北幕墙内侧 local z=-5.85，画面朝南迎向观展人流)：6幅画两行 + 横幅
     var wallArt = [
       [-3.6, 3.4], [-1.8, 3.4], [0.0, 3.4], [1.8, 3.4], [3.6, 3.4], [-2.7, 1.7], [2.7, 1.7]
