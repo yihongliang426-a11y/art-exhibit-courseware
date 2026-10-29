@@ -7892,7 +7892,11 @@ CW.mods.landscape = function (ctx) {
   }
   (function loadGLBs() {
     var glbLoader = new THREE.GLTFLoader();
-    var names = Object.keys(CW.GLB_FILES);
+    /* 只取真正的GLB数据项（跳过embed脚本附加的__join等辅助成员） */
+    var names = Object.keys(CW.GLB_FILES).filter(function (k) {
+      var v = CW.GLB_FILES[k];
+      return typeof v === 'string' || Array.isArray(v);
+    });
     var left = names.length;
     if (!names.length) { glbReady(); return; }
     names.forEach(function (g) {
