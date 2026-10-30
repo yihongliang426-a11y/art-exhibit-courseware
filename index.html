@@ -151,7 +151,7 @@
   <div class="sec">🚶 漫游方式</div>
   <div class="btnrow" id="modeBtns">
     <button data-mode="orbit" class="active">🖱 旋转漫游</button>
-    <button data-mode="walk" class="warm">🚶 步行漫游</button>
+    <button data-mode="walk" class="warm">🧒 小朋友漫游</button>
   </div>
 
   <div class="sec">📍 校园分区 · 点选布展位置</div>
@@ -8042,8 +8042,50 @@ CW.mods.landscape = function (ctx) {
     return false;
   }
 
-  /* ================= 步行漫游 ================= */
-  var walk = { on: false, yaw: Math.PI, pitch: 0.05, keys: {}, look: null };
+  /* ================= 小朋友第三人称漫游 ================= */
+  var walk = { on: false, pos: new THREE.Vector3(-6.5, 0, -48), yaw: 0, camYaw: Math.PI,
+               dist: 5.2, keys: {}, look: null, moving: false, swing: 0 };
+  var kid = null, kidParts = null;
+  function buildKid() {
+    var g = new THREE.Group();
+    var skin = new THREE.MeshStandardMaterial({ color: 0xf6cda6, roughness: 0.85 });
+    var shirt = new THREE.MeshStandardMaterial({ color: 0x2db88a, roughness: 0.8 });
+    var pants = new THREE.MeshStandardMaterial({ color: 0x3a6ea5, roughness: 0.85 });
+    var hairM = new THREE.MeshStandardMaterial({ color: 0x35261a, roughness: 0.9 });
+    var shoe = new THREE.MeshStandardMaterial({ color: 0xe05c3a, roughness: 0.8 });
+    function limb(w, h, d, m, px, py) {
+      var geo = new THREE.BoxGeometry(w, h, d);
+      geo.translate(0, -h / 2, 0);
+      var o = new THREE.Mesh(geo, m);
+      o.position.set(px, py, 0); o.castShadow = true;
+      g.add(o); return o;
+    }
+    var lL = limb(0.15, 0.4, 0.17, pants, -0.11, 0.42);
+    var rL = limb(0.15, 0.4, 0.17, pants, 0.11, 0.42);
+    var lS = limb(0.15, 0.1, 0.22, shoe, -0.11, 0.06); lS.position.z = 0.02; lS.rotation.copy(lL.rotation); lS.position.x = lL.position.x;
+    var rS = limb(0.15, 0.1, 0.22, shoe, 0.11, 0.06); rS.rotation.copy(rL.rotation); rS.position.x = rL.position.x;
+    var body = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.5, 0.28), shirt);
+    body.position.y = 0.67; body.castShadow = true; g.add(body);
+    var lA = limb(0.11, 0.38, 0.13, shirt, -0.29, 0.88);
+    var rA = limb(0.11, 0.38, 0.13, shirt, 0.29, 0.88);
+    var head = new THREE.Mesh(new THREE.SphereGeometry(0.215, 18, 14), skin);
+    head.position.y = 1.13; head.castShadow = true; g.add(head);
+    var cap = new THREE.Mesh(new THREE.SphereGeometry(0.225, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), hairM);
+    cap.position.y = 1.15; g.add(cap);
+    var eyeG = new THREE.SphereGeometry(0.026, 8, 6);
+    var eyeM = new THREE.MeshBasicMaterial({ color: 0x2a2a2a });
+    var e1 = new THREE.Mesh(eyeG, eyeM); e1.position.set(-0.07, 1.15, 0.19); g.add(e1);
+    var e2 = new THREE.Mesh(eyeG, eyeM); e2.position.set(0.07, 1.15, 0.19); g.add(e2);
+    var smile = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.012, 6, 12, Math.PI), eyeM);
+    smile.position.set(0, 1.08, 0.2); smile.rotation.z = Math.PI; g.add(smile);
+    /* 书包（小背包） */
+    var bag = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.36, 0.14),
+      new THREE.MeshStandardMaterial({ color: 0xf6a83c, roughness: 0.8 }));
+    bag.position.set(0, 0.72, -0.2); bag.castShadow = true; g.add(bag);
+    kid = g; kidParts = { lL: lL, rL: rL, lA: lA, rA: rA };
+    g.position.copy(walk.pos);
+    scene.add(g);
+  }
   function setMode(m) {
     if (m === state.mode) return;
     state.mode = m;
@@ -8053,31 +8095,29 @@ CW.mods.landscape = function (ctx) {
       b.classList.toggle('active-mode', b.dataset.mode === m);
     });
     $('#modeHint').textContent = walk.on
-      ? '当前：步行漫游 · W/A/S/D 移动 · 左键拖动转向 · 右键点地自动走过去'
-      : '当前：旋转漫游 · 左键拖动旋转 / 滚轮缩放 / 右键点地直达';
+      ? '当前：小朋友漫游 · W/A/S/D 移动 · 左键拖动转视角 · 滚轮远近 · 右键点地小朋友自己走过去'
+      : '当前：旋转漫游 · 左键拖动旋转 / 滚轮缩放 / 右键平移';
+    var ch = document.getElementById('crosshair');
+    if (ch) ch.style.display = 'none';
     if (walk.on) {
       fly = null;
-      var ch = document.getElementById('crosshair');
-      if (ch) ch.style.display = 'block';
-      /* 相机若恰在楼内，沿+x推到楼外（防卡死） */
-      var guard = 0;
-      while (solidAt(camera.position.x, camera.position.z, 1.0) && guard++ < 80) {
-        camera.position.x += 2;
-        if (camera.position.x > 108) { camera.position.x = -108; camera.position.z += 4; }
-      }
+      if (!kid) buildKid();
+      kid.visible = true;
+      /* 小朋友放到当前视角焦点附近的空地 */
       var tg = controls.target;
-      var dir = new THREE.Vector3().subVectors(camera.position, tg);
-      dir.y = 0;
-      if (dir.length() < 0.01) dir.set(0, 0, 1);
-      dir.normalize();
-      camera.position.set(tg.x + dir.x * 14, 1.7, tg.z + dir.z * 14);
-      walk.yaw = Math.atan2(dir.x, dir.z);
-      walk.pitch = 0.05;
-      toast('步行漫游：W前进 A左 S后退 D右 · 按住拖动看四周');
+      walk.pos.set(tg.x, 0, tg.z);
+      var guard = 0;
+      while (solidAt(walk.pos.x, walk.pos.z, 1.0) && guard++ < 80) {
+        walk.pos.x += 2;
+        if (walk.pos.x > 108) { walk.pos.x = -108; walk.pos.z += 4; }
+      }
+      kid.position.copy(walk.pos);
+      walk.camYaw = Math.atan2(camera.position.x - walk.pos.x, camera.position.z - walk.pos.z);
+      toast('小朋友出发啦！W/A/S/D 移动 · 拖动转视角 · 右键点地他自己走');
     } else {
-      var ch2 = document.getElementById('crosshair');
-      if (ch2) ch2.style.display = 'none';
-      flyTo([camera.position.x + 22, 62, camera.position.z + 28], [0, 0, 0], 1.2);
+      kid.visible = false;
+      controls.target.set(walk.pos.x, 1, walk.pos.z);
+      flyTo([walk.pos.x + 18, 26, walk.pos.z + 26], [walk.pos.x, 1, walk.pos.z], 1.2);
     }
   }
   addEventListener('keydown', function (e) {
@@ -8086,40 +8126,72 @@ CW.mods.landscape = function (ctx) {
     if (e.key === ' ' || e.key.indexOf('Arrow') === 0 || 'wasdWASD'.indexOf(e.key) >= 0) e.preventDefault();
   });
   addEventListener('keyup', function (e) { walk.keys[e.code] = false; });
+  function lerpAngle(a, b, t) {
+    var d = (b - a) % (Math.PI * 2);
+    if (d > Math.PI) d -= Math.PI * 2;
+    if (d < -Math.PI) d += Math.PI * 2;
+    return a + d * t;
+  }
   function tickWalk(dt) {
-    if (!walk.on) return;
-    var sp = (walk.keys.ShiftLeft || walk.keys.ShiftRight ? 13 : 6.5) * dt;
+    if (!walk.on || !kid) return;
+    var sp = (walk.keys.ShiftLeft || walk.keys.ShiftRight ? 6.5 : 3.4) * dt;
     var mx = 0, mz = 0;
     if (walk.keys.KeyW || walk.keys.ArrowUp) mz -= 1;
     if (walk.keys.KeyS || walk.keys.ArrowDown) mz += 1;
     if (walk.keys.KeyA || walk.keys.ArrowLeft) mx -= 1;
     if (walk.keys.KeyD || walk.keys.ArrowRight) mx += 1;
-    if (mx || mz) {
+    walk.moving = !!(mx || mz);
+    if (walk.moving) {
       var len = Math.hypot(mx, mz); mx /= len; mz /= len;
-      var sy = Math.sin(walk.yaw), cy = Math.cos(walk.yaw);
-      /* yaw=0 面向 -z；前进向量 = (-sin, -cos)，右移 = (cos, -sin) */
-      var dx = (mx * cy + mz * sy) * sp;
-      var dz = (mz * cy - mx * sy) * sp;
-      var nx2 = Math.max(-108, Math.min(108, camera.position.x + dx));
-      var nz2 = Math.max(-66, Math.min(66, camera.position.z + dz));
-      if (!solidAt(nx2, camera.position.z)) camera.position.x = nx2;   // 分轴滑动贴墙走
-      if (!solidAt(camera.position.x, nz2)) camera.position.z = nz2;
-      camera.position.y = 1.7;
+      var cy = Math.cos(walk.camYaw), sy = Math.sin(walk.camYaw);
+      /* 相机在小朋友身后：前进方向 = 相机指向小朋友的水平方向 */
+      var dx = (-sy * -mz + cy * mx) * sp;
+      var dz = (-cy * -mz - sy * mx) * sp;
+      var nx2 = Math.max(-108, Math.min(108, walk.pos.x + dx));
+      var nz2 = Math.max(-66, Math.min(66, walk.pos.z + dz));
+      if (!solidAt(nx2, walk.pos.z, 0.35)) walk.pos.x = nx2;      // 分轴滑动
+      if (!solidAt(walk.pos.x, nz2, 0.35)) walk.pos.z = nz2;
+      var targetYaw = Math.atan2(dx, dz);
+      walk.yaw = lerpAngle(walk.yaw, targetYaw, Math.min(1, dt * 10));
     }
-    camera.rotation.order = 'YXZ';
-    camera.rotation.set(walk.pitch, walk.yaw, 0, 'YXZ');
+    kid.position.set(walk.pos.x, 0, walk.pos.z);
+    kid.rotation.y = walk.yaw;
+    /* 走路摆臂摆腿 */
+    if (walk.moving) walk.swing += dt * 11;
+    else walk.swing *= 0.85;
+    var sw = Math.sin(walk.swing) * (walk.moving ? 0.55 : 0.05);
+    kidParts.lL.rotation.x = sw; kidParts.rL.rotation.x = -sw;
+    kidParts.lA.rotation.x = -sw * 0.8; kidParts.rA.rotation.x = sw * 0.8;
+    /* 第三人称跟随相机（遇楼拉近） */
+    var camD = walk.dist, camH = 0.65 + camD * 0.32;
+    var cx = walk.pos.x + Math.sin(walk.camYaw) * camD;
+    var cz = walk.pos.z + Math.cos(walk.camYaw) * camD;
+    var dirv = new THREE.Vector3(cx - walk.pos.x, camH, cz - walk.pos.z);
+    var ray2 = new THREE.Raycaster(walk.pos.clone().setY(1.1), dirv.clone().normalize(), 0.3, dirv.length());
+    var hits2 = ray2.intersectObjects(campus.children, true);
+    if (hits2.length) {
+      var f = Math.max(0.25, (hits2[0].distance - 0.3) / dirv.length());
+      cx = walk.pos.x + dirv.x * f; cz = walk.pos.z + dirv.z * f;
+    }
+    camera.position.set(cx, camH, cz);
+    camera.lookAt(walk.pos.x, 1.05, walk.pos.z);
   }
   renderer.domElement.addEventListener('mousedown', function (e) {
-    if (walk.on && e.button === 0) walk.look = { x: e.clientX, y: e.clientY, yaw: walk.yaw, pitch: walk.pitch };
+    if (walk.on && e.button === 0) walk.look = { x: e.clientX, yaw: walk.camYaw };
   });
   addEventListener('mousemove', function (e) {
     if (walk.on && walk.look) {
-      walk.yaw = walk.look.yaw - (e.clientX - walk.look.x) * 0.005;
-      walk.pitch = Math.max(-0.5, Math.min(0.7, walk.look.pitch + (e.clientY - walk.look.y) * 0.004));
+      walk.camYaw = walk.look.yaw - (e.clientX - walk.look.x) * 0.006;
     }
   });
   addEventListener('mouseup', function () { walk.look = null; });
+  renderer.domElement.addEventListener('wheel', function (e) {
+    if (!walk.on) return;
+    e.preventDefault();
+    walk.dist = Math.max(2.2, Math.min(11, walk.dist * (e.deltaY > 0 ? 1.1 : 0.9)));
+  }, { passive: false });
 
+  /* ================= 分区体系 ================= */
   /* ================= 分区体系 ================= */
   var ZONES = [
     { id: 'frontgate', name: '前校门 · 入口区', pos: [-6.5, -62], desc: '学校礼仪门户，人流量最大。适合迎接主题的第一印象展。', tip: '迎宾花墙 · 校训展示 · 气球拱门 · 大型装置' },
@@ -8481,8 +8553,9 @@ CW.mods.landscape = function (ctx) {
       flyTo([pt.x + dir.x * 16, Math.max(14, camera.position.y * 0.6), pt.z + dir.z * 16],
         [pt.x, 1, pt.z], 1.0);
     } else {
-      /* 步行模式：平滑滑步到目标（保持人眼高度，遇楼自动停在楼前） */
-      autoWalk = { p0: camera.position.clone(), p1: new THREE.Vector3(pt.x, 1.7, pt.z), t: 0, dur: 0.9 };
+      /* 小朋友自己走过去（跟随相机自动跟随） */
+      autoWalk = { p0: walk.pos.clone(), p1: new THREE.Vector3(pt.x, 0, pt.z), t: 0, dur: 0.9 };
+      walk.moving = true;
     }
   }
   renderer.domElement.addEventListener('contextmenu', function (e) {
@@ -8490,16 +8563,18 @@ CW.mods.landscape = function (ctx) {
     rmbTravel(e);
   });
   function tickRmb(dt) {
-    if (autoWalk) {
+    if (autoWalk && walk.on) {
       var t = Math.min(autoWalk.t + dt / autoWalk.dur, 1);
       var e2 = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
       var px = autoWalk.p0.x + (autoWalk.p1.x - autoWalk.p0.x) * e2;
       var pz = autoWalk.p0.z + (autoWalk.p1.z - autoWalk.p0.z) * e2;
-      if (solidAt(px, pz, 0.8)) { autoWalk = null; toast('前面是楼，走不到更里面了'); }
+      if (solidAt(px, pz, 0.8)) { autoWalk = null; walk.moving = false; toast('前面是楼，小朋友走不进去了'); }
       else {
-        camera.position.x = px; camera.position.z = pz; camera.position.y = 1.7;
+        walk.pos.x = px; walk.pos.z = pz;
+        walk.yaw = lerpAngle(walk.yaw, Math.atan2(autoWalk.p1.x - autoWalk.p0.x, autoWalk.p1.z - autoWalk.p0.z), Math.min(1, dt * 8));
+        walk.moving = t < 1;
         autoWalk.t = t;
-        if (t >= 1) autoWalk = null;
+        if (t >= 1) { autoWalk = null; walk.moving = false; }
       }
     }
     if (rmb.visible) {
