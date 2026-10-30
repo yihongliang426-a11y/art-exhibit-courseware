@@ -56,6 +56,22 @@
           font-size: 11.5px; color: #2a5a4a; cursor: pointer; transition: all .15s; }
   .chip.active { background: #1a8a6e; border-color: #1a8a6e; color: #fff; }
   .chip .sw { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+  #btnPlaceMode {
+    display: block; width: 100%; margin-top: 8px; padding: 9px; border: 2px solid #1a8a6e;
+    border-radius: 10px; background: #fff; color: #1a8a6e; font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: all .15s;
+  }
+  #btnPlaceMode:hover { background: #eef9f4; }
+  #btnPlaceMode.on { background: linear-gradient(135deg, #1a8a6e, #2db88a); color: #fff; border-color: transparent;
+                     box-shadow: 0 4px 14px rgba(26, 138, 110, 0.4); }
+  #btnPlaceMode {
+    display: block; width: 100%; margin-top: 8px; padding: 9px; border: 2px solid #1a8a6e;
+    border-radius: 10px; background: #fff; color: #1a8a6e; font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: all .15s;
+  }
+  #btnPlaceMode:hover { background: #eef9f4; }
+  #btnPlaceMode.on { background: linear-gradient(135deg, #1a8a6e, #2db88a); color: #fff; border-color: transparent;
+                     box-shadow: 0 4px 14px rgba(26, 138, 110, 0.4); }
   #btnPlace {
     display: block; width: 100%; margin-top: 8px; padding: 9px; border: none; border-radius: 10px;
     background: linear-gradient(135deg, #e07b2f, #f09c4a); color: #fff; font-size: 13px;
@@ -176,12 +192,13 @@
   <div style="height:6px"></div>
   <div class="chips" id="themeChips"></div>
   <div style="height:6px"></div>
+  <button id="btnPlaceMode">🖌 开始摆放（点击地面放置）</button>
+  <p style="font-size:10.5px;color:#7a9a8e;margin:5px 2px 0;line-height:1.5">摆放中：点击地面放下作品 · 拖动调位置 · 滚轮转向 · 右键撤销上一件 · ESC结束<br>不开摆放时：点击选分区/作品，滚轮缩放画面</p>
+  <div style="height:6px"></div>
   <div class="chips">
-    <span class="chip toggle" id="chipGhost">👁 放置预览</span>
     <span class="chip toggle" id="chipSnap">🧲 磁吸网格</span>
   </div>
-  <button id="btnPlace">🖌 放置一件作品</button>
-  <p style="font-size:10.5px;color:#7a9a8e;margin:5px 2px 0;line-height:1.5">开启预览后：鼠标指到地面出现半透明作品，点一下就放下；拖动调整位置，滚轮旋转方向</p>
+  <button id="btnPlace" style="margin-top:6px">⬇ 放到所选分区中心</button>
   <div id="selTools" style="display:none">
     <div class="sec" style="margin-top:2px">🎛 选中作品</div>
     <div class="btnrow">
@@ -8219,6 +8236,22 @@ CW.mods.landscape = function (ctx) {
     }
   }
   addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && state.mode === 'orbit') {
+      if (placeMode) {
+        placeMode = false;
+        var bm = document.getElementById('btnPlaceMode');
+        bm.classList.remove('on');
+        bm.textContent = '🖌 开始摆放（点击地面放置）';
+        if (ghost) ghost.visible = false;
+        controls.enabled = !fly;
+        selectItem(null);
+        $('#modeHint').textContent = '旋转漫游 · 左键拖动旋转 / 滚轮缩放 / 右键平移';
+        toast('已结束摆放');
+      } else if (state.selItem != null) {
+        selectItem(null);
+      }
+      return;
+    }
     if (walk.on) {
       walk.keys[e.code] = true;
     if (e.key === ' ' || e.key.indexOf('Arrow') === 0 || 'wasdWASD'.indexOf(e.key) >= 0) e.preventDefault();
@@ -8321,13 +8354,17 @@ CW.mods.landscape = function (ctx) {
       walk.dist = Math.max(2.2, Math.min(11, walk.dist * (e.deltaY > 0 ? 1.1 : 0.9)));
       return;
     }
-    /* 旋转作品：拖拽中或选中时滚轮转15°（Shift=5°） */
-    var target = dragIt || (state.selItem && state.items.filter(function (x) { return x.id === state.selItem; })[0]);
-    if (target) {
+    /* 拖拽中滚轮=转向作品15°（Shift=5°）；其余情况滚轮=相机缩放 */
+    if (dragIt) {
       e.preventDefault();
       var step = (e.shiftKey ? 5 : 15) * (e.deltaY > 0 ? 1 : -1);
-      target.mesh.rotation.y += step * Math.PI / 180;
+      dragIt.mesh.rotation.y += step * Math.PI / 180;
       pushUndoThrottled();
+      return;
+    }
+    if (placeMode && ghost && ghost.visible) {
+      e.preventDefault();
+      ghost.rotation.y += (e.deltaY > 0 ? 15 : -15) * Math.PI / 180;
     }
   }, { passive: false });
   var undoT = null;
@@ -8353,7 +8390,7 @@ CW.mods.landscape = function (ctx) {
     { id: 'backgate', name: '后校门（东南）', pos: [59.6, 64], desc: '次入口，放学时段家长聚集。', tip: '引导标识 · 感谢墙 · 社区共建展' }
   ];
   var state = { mode: 'orbit', zone: null, items: [], selItem: null, type: '画框', theme: '彩虹嘉年华', nextId: 1 };
-  var snapOn = true, ghostOn = true, ghost = null, ghostRot = 0;
+  var snapOn = true, placeMode = false, ghost = null;
   var undoStack = [];
   CW.state = state;
 
@@ -8522,12 +8559,13 @@ CW.mods.landscape = function (ctx) {
   }
   function rebuildGhost() {
     if (ghost) { scene.remove(ghost); ghost = null; }
-    if (!ghostOn) return;
+    if (!placeMode) return;
     ghost = makeGhostClone(buildArt(state.type, state.theme));
     ghost.visible = false;
     scene.add(ghost);
   }
   function placeItem() {
+    if (placeMode) { toast('摆放模式中直接点击地面即可放置'); return; }
     if (!state.zone) { toast('请先在上方选择一个分区 📍'); return; }
     pushUndo();
     var z = null;
@@ -8619,6 +8657,9 @@ CW.mods.landscape = function (ctx) {
     while (state.items.length) artRoot.remove(state.items.pop().mesh);
     state.nextId = data.nextId || 1;
     state.selItem = null;
+    var st = document.getElementById('selTools');
+    if (st) st.style.display = 'none';
+    selRing.visible = false;
     data.items.forEach(function (rec) {
       try {
         var mesh = buildArt(rec.type, rec.theme);
@@ -8700,7 +8741,7 @@ CW.mods.landscape = function (ctx) {
   });
   addEventListener('pointermove', function (e) {
     /* 幽灵预览跟随 */
-    if (ghostOn && ghost && state.mode === 'orbit' && !dragIt) {
+    if (placeMode && ghost && state.mode === 'orbit' && !dragIt) {
       var r0 = renderer.domElement.getBoundingClientRect();
       if (e.clientX >= r0.left && e.clientX <= r0.right && e.clientY >= r0.top && e.clientY <= r0.bottom) {
         var mx0 = ((e.clientX - r0.left) / r0.width) * 2 - 1;
@@ -8746,8 +8787,8 @@ CW.mods.landscape = function (ctx) {
     var mx = ((e.clientX - r.left) / r.width) * 2 - 1;
     var my = -((e.clientY - r.top) / r.height) * 2 + 1;
     ray.setFromCamera({ x: mx, y: my }, camera);
-    /* 幽灵预览模式：点地面即放置 */
-    if (ghostOn && ghost && ghost.visible && !pickItem(e)) {
+    /* 摆放模式：点地面即放置 */
+    if (placeMode && ghost && ghost.visible && !pickItem(e)) {
       var ptg = new THREE.Vector3();
       if (ray.ray.intersectPlane(groundPlane, ptg)) {
         pushUndo();
@@ -8759,9 +8800,8 @@ CW.mods.landscape = function (ctx) {
         var it2 = { id: state.nextId++, type: state.type, zone: state.zone, theme: state.theme, mesh: mesh2 };
         mesh2.userData.item = it2;
         state.items.push(it2);
-        if (!state.zone) selectZone(nearestZone(ptg.x, ptg.z), false);
         renderList(); save(); sunLight.shadow.needsUpdate = true;
-        toast('已放置「' + state.type + '」· 继续点击可连续放置');
+        toast('已放下一件 · 滚轮转向 · 右键撤销上一件');
         return;
       }
     }
@@ -8832,6 +8872,13 @@ CW.mods.landscape = function (ctx) {
   }
   renderer.domElement.addEventListener('contextmenu', function (e) {
     e.preventDefault();
+    if (placeMode) {
+      /* 摆放模式：右键撤销上一件 */
+      var last = null;
+      state.items.forEach(function (x) { if (!last || x.id > last.id) last = x; });
+      if (last) { removeItem(last.id); toast('已撤销上一件'); }
+      return;
+    }
     rmbTravel(e);
   });
   function tickRmb(dt) {
@@ -8896,13 +8943,25 @@ CW.mods.landscape = function (ctx) {
       thc.appendChild(c);
     });
     $('#btnPlace').addEventListener('click', placeItem);
-    var chipG = document.getElementById('chipGhost');
-    chipG.addEventListener('click', function () {
-      ghostOn = !ghostOn;
-      chipG.classList.toggle('active', ghostOn);
-      if (!ghostOn && ghost) ghost.visible = false;
-      else rebuildGhost();
-      toast(ghostOn ? '放置预览已开启：鼠标指地面即见半透明作品' : '放置预览已关闭');
+    var bm = document.getElementById('btnPlaceMode');
+    bm.addEventListener('click', function () {
+      placeMode = !placeMode;
+      bm.classList.toggle('on', placeMode);
+      bm.textContent = placeMode ? '✅ 摆放中…点击地面放下作品' : '🖌 开始摆放（点击地面放置）';
+      if (placeMode) {
+        if (!ghost) rebuildGhost();
+        ghost.visible = false;
+        controls.enabled = false;
+        selRing.visible = false;
+        selectItem(null);
+        toast('摆放模式：点击地面放下 · 滚轮转向 · 右键撤销上一件 · ESC结束');
+        $('#modeHint').textContent = '摆放中 · 点击地面放下作品 · 滚轮转方向 · 右键撤销上一件 · ESC结束';
+      } else {
+        if (ghost) ghost.visible = false;
+        controls.enabled = !fly;
+        $('#modeHint').textContent = '旋转漫游 · 左键拖动旋转 / 滚轮缩放 / 右键平移';
+        toast('已结束摆放');
+      }
     });
     var chipS = document.getElementById('chipSnap');
     chipS.addEventListener('click', function () {
