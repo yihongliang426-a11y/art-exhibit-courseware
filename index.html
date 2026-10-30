@@ -6615,6 +6615,7 @@ CW.mods.ground = function (ctx) {
   function fixTex(t) {
     if (THREE.SRGBColorSpace !== undefined && t.colorSpace !== undefined) t.colorSpace = THREE.SRGBColorSpace;
     else if (THREE.sRGBEncoding !== undefined) t.encoding = THREE.sRGBEncoding;
+    try { t.anisotropy = Math.min(8, (CW.MAXANISO || 4)); } catch (e) { }
     return t;
   }
 
@@ -7834,6 +7835,7 @@ CW.mods.landscape = function (ctx) {
   renderer.toneMappingExposure = 0.72;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  CW.MAXANISO = renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 4;
   container.appendChild(renderer.domElement);
 
   var scene = new THREE.Scene();
@@ -7889,6 +7891,22 @@ CW.mods.landscape = function (ctx) {
       clouds.push(sp); scene.add(sp);
     }
     CW.__clouds = clouds;
+    /* 环境反射：以天空生成PMREM，让玻璃/金属/墙面获得天空IBL（精致感关键） */
+    try {
+      var pmrem = new THREE.PMREMGenerator(renderer);
+      var envScene = new THREE.Scene();
+      envScene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 16, 10), skyMat.clone()));
+      CW.__envTex = pmrem.fromScene(envScene, 0.04).texture;
+      pmrem.dispose();
+      /* 只给玻璃类反射（墙面不吃IBL防洗白） */
+      var giveEnv = function (m) {
+        if (m && m.isMeshStandardMaterial && /玻璃|玻|幕/.test(m.name || '')) {
+          m.envMap = CW.__envTex; m.envMapIntensity = 1.3;
+        }
+      };
+      scene.traverse(function (o) { if (o.isMesh) giveEnv(o.material); });
+      CW.__setEnv = giveEnv;
+    } catch (e) { console.warn('[env]', e); }
   })();
 
   /* ================= 地面 / 景观模块 ================= */
@@ -8044,7 +8062,7 @@ CW.mods.landscape = function (ctx) {
 
   /* ================= 小朋友第三人称漫游 ================= */
   var walk = { on: false, pos: new THREE.Vector3(-6.5, 0, -48), yaw: 0, camYaw: Math.PI,
-               dist: 5.2, keys: {}, look: null, moving: false, swing: 0 };
+               pitch: 0.18, dist: 5.2, keys: {}, look: null, locked: false, moving: false, swing: 0 };
   var kid = null, kidParts = null;
   function buildKid() {
     var g = new THREE.Group();
@@ -8113,7 +8131,8 @@ CW.mods.landscape = function (ctx) {
       }
       kid.position.copy(walk.pos);
       walk.camYaw = Math.atan2(camera.position.x - walk.pos.x, camera.position.z - walk.pos.z);
-      toast('小朋友出发啦！W/A/S/D 移动 · 拖动转视角 · 右键点地他自己走');
+      walk.pitch = 0.18;
+      toast('小朋友出发啦！点击画面锁定鼠标转向（ESC退出）· WASD 移动 · 右键点地他自己走');
     } else {
       kid.visible = false;
       controls.target.set(walk.pos.x, 1, walk.pos.z);
@@ -8162,27 +8181,48 @@ CW.mods.landscape = function (ctx) {
     var sw = Math.sin(walk.swing) * (walk.moving ? 0.55 : 0.05);
     kidParts.lL.rotation.x = sw; kidParts.rL.rotation.x = -sw;
     kidParts.lA.rotation.x = -sw * 0.8; kidParts.rA.rotation.x = sw * 0.8;
-    /* 第三人称跟随相机（遇楼拉近） */
-    var camD = walk.dist, camH = 0.65 + camD * 0.32;
-    var cx = walk.pos.x + Math.sin(walk.camYaw) * camD;
-    var cz = walk.pos.z + Math.cos(walk.camYaw) * camD;
-    var dirv = new THREE.Vector3(cx - walk.pos.x, camH, cz - walk.pos.z);
+    /* 第三人称跟随相机（俯仰可调，遇楼拉近） */
+    var camD = walk.dist;
+    var el = 0.42 + walk.pitch;
+    var cx = walk.pos.x + Math.sin(walk.camYaw) * camD * Math.cos(el);
+    var cz = walk.pos.z + Math.cos(walk.camYaw) * camD * Math.cos(el);
+    var cy2 = 0.9 + Math.sin(el) * camD;
+    var dirv = new THREE.Vector3(cx - walk.pos.x, cy2 - 1.0, cz - walk.pos.z);
     var ray2 = new THREE.Raycaster(walk.pos.clone().setY(1.1), dirv.clone().normalize(), 0.3, dirv.length());
     var hits2 = ray2.intersectObjects(campus.children, true);
     if (hits2.length) {
       var f = Math.max(0.25, (hits2[0].distance - 0.3) / dirv.length());
       cx = walk.pos.x + dirv.x * f; cz = walk.pos.z + dirv.z * f;
+      cy2 = 1.0 + dirv.y * f;
     }
-    camera.position.set(cx, camH, cz);
-    camera.lookAt(walk.pos.x, 1.05, walk.pos.z);
+    camera.position.set(cx, cy2, cz);
+    camera.lookAt(walk.pos.x, 1.0, walk.pos.z);
   }
-  renderer.domElement.addEventListener('mousedown', function (e) {
-    if (walk.on && e.button === 0) walk.look = { x: e.clientX, yaw: walk.camYaw };
+  renderer.domElement.addEventListener('click', function () {
+    if (walk.on && !walk.locked) {
+      try { renderer.domElement.requestPointerLock(); } catch (e) { }
+    }
+  });
+  document.addEventListener('pointerlockchange', function () {
+    walk.locked = document.pointerLockElement === renderer.domElement;
+    if (walk.on) {
+      $('#modeHint').textContent = walk.locked
+        ? '鼠标转向中 · W/A/S/D 移动 · 滚轮远近 · 按 ESC 释放鼠标'
+        : '点击画面锁定鼠标转向 · WASD 移动 · 右键点地他自己走';
+    }
   });
   addEventListener('mousemove', function (e) {
-    if (walk.on && walk.look) {
+    if (!walk.on) return;
+    if (walk.locked) {
+      walk.camYaw -= e.movementX * 0.0042;
+      walk.pitch = Math.max(-0.12, Math.min(0.72, walk.pitch + e.movementY * 0.003));
+    } else if (walk.look) {
       walk.camYaw = walk.look.yaw - (e.clientX - walk.look.x) * 0.006;
+      walk.pitch = Math.max(-0.12, Math.min(0.72, walk.pitch + (e.clientY - walk.look.py) * 0.003));
     }
+  });
+  renderer.domElement.addEventListener('mousedown', function (e) {
+    if (walk.on && e.button === 0 && !walk.locked) walk.look = { x: e.clientX, py: e.clientY, yaw: walk.camYaw, pitch: walk.pitch };
   });
   addEventListener('mouseup', function () { walk.look = null; });
   renderer.domElement.addEventListener('wheel', function (e) {
@@ -8285,6 +8325,7 @@ CW.mods.landscape = function (ctx) {
   function buildArt(type, theme) {
     var g = new THREE.Group();
     var pal = THEMES[theme] || THEMES['我的奇思妙想'];
+    var ENV = CW.__setEnv || function () {};
     var wood = new THREE.MeshStandardMaterial({ color: 0x9c6c43, roughness: 0.8 });
     var white = new THREE.MeshStandardMaterial({ color: 0xf7f4ec, roughness: 0.9 });
     var seed = _seed++;
@@ -8350,6 +8391,7 @@ CW.mods.landscape = function (ctx) {
         wt.position.set(wi * arcR, 0.2, 0); g.add(wt);
       }
     }
+    g.traverse(function (o) { if (o.isMesh) ENV(o.material); });
     return g;
   }
   function placeItem() {
