@@ -8022,6 +8022,26 @@ CW.mods.landscape = function (ctx) {
     });
   }
 
+  /* ================= 建筑碰撞（步行/滑行不穿楼） ================= */
+  var SOLIDS = [
+    [-93.5, -51.5, -67.3, 14.3], [-83.2, -17.8, -50.5, 21.3], [-70.2, -50.4, -31.9, -34.7],
+    [-32.5, -46.9, -4.8, -31.9], [-7.3, -46.4, 37.6, -22.5], [20.2, -26, 42.3, 8.4],
+    [-9.1, -6.1, 27.8, 37.2], [-57.3, -17.3, -13.2, 33.9], [-75.3, 7.1, -40.5, 38.1],
+    [-45.1, 15.5, -13, 42.7], [-19.4, -28, 17.5, -13.2],
+    [56, -46, 108.5, 56]
+  ];
+  var GYM_C = { x: 44.7, z: 24.9, r: 16.1 };
+  function solidAt(px, pz, pad) {
+    pad = pad || 0.5;
+    for (var i = 0; i < SOLIDS.length; i++) {
+      var r = SOLIDS[i];
+      if (px > r[0] - pad && px < r[2] + pad && pz > r[1] - pad && pz < r[3] + pad) return true;
+    }
+    var dx = px - GYM_C.x, dz = pz - GYM_C.z;
+    if (dx * dx + dz * dz < (GYM_C.r + pad) * (GYM_C.r + pad)) return true;
+    return false;
+  }
+
   /* ================= 步行漫游 ================= */
   var walk = { on: false, yaw: Math.PI, pitch: 0.05, keys: {}, look: null };
   function setMode(m) {
@@ -8039,6 +8059,12 @@ CW.mods.landscape = function (ctx) {
       fly = null;
       var ch = document.getElementById('crosshair');
       if (ch) ch.style.display = 'block';
+      /* 相机若恰在楼内，沿+x推到楼外（防卡死） */
+      var guard = 0;
+      while (solidAt(camera.position.x, camera.position.z, 1.0) && guard++ < 80) {
+        camera.position.x += 2;
+        if (camera.position.x > 108) { camera.position.x = -108; camera.position.z += 4; }
+      }
       var tg = controls.target;
       var dir = new THREE.Vector3().subVectors(camera.position, tg);
       dir.y = 0;
@@ -8071,11 +8097,13 @@ CW.mods.landscape = function (ctx) {
     if (mx || mz) {
       var len = Math.hypot(mx, mz); mx /= len; mz /= len;
       var sy = Math.sin(walk.yaw), cy = Math.cos(walk.yaw);
-      /* yaw=0 面向 -z；前进 = mz*sin? 标准：dx=mx*cy+mz*sy, dz=mz*cy-mx*sy */
-      camera.position.x += (mx * cy + mz * sy) * sp;
-      camera.position.z += (mz * cy - mx * sy) * sp;
-      camera.position.x = Math.max(-108, Math.min(108, camera.position.x));
-      camera.position.z = Math.max(-66, Math.min(66, camera.position.z));
+      /* yaw=0 面向 -z；前进向量 = (-sin, -cos)，右移 = (cos, -sin) */
+      var dx = (mx * cy + mz * sy) * sp;
+      var dz = (mz * cy - mx * sy) * sp;
+      var nx2 = Math.max(-108, Math.min(108, camera.position.x + dx));
+      var nz2 = Math.max(-66, Math.min(66, camera.position.z + dz));
+      if (!solidAt(nx2, camera.position.z)) camera.position.x = nx2;   // 分轴滑动贴墙走
+      if (!solidAt(camera.position.x, nz2)) camera.position.z = nz2;
       camera.position.y = 1.7;
     }
     camera.rotation.order = 'YXZ';
@@ -8259,7 +8287,13 @@ CW.mods.landscape = function (ctx) {
     var inZone = state.items.filter(function (it) { return it.zone === state.zone; }).length;
     var ox = (inZone % 3 - 1) * 3.1, oz = Math.floor(inZone / 3) * 3.0;
     var mesh = buildArt(state.type, state.theme);
-    mesh.position.set(z.pos[0] + ox, 0, z.pos[1] + 3 + oz);
+    var px0 = z.pos[0] + ox, pz0 = z.pos[1] + 3 + oz;
+    for (var push = 0; push < 12 && solidAt(px0, pz0, 1.0); push++) {
+      var away = Math.atan2(pz0 - z.pos[1], px0 - z.pos[0]);
+      px0 += Math.cos(away) * 2.2;
+      pz0 += Math.sin(away) * 2.2;
+    }
+    mesh.position.set(px0, 0, pz0);
     artRoot.add(mesh);
     var it = { id: state.nextId++, type: state.type, zone: state.zone, theme: state.theme, mesh: mesh };
     mesh.userData.item = it;
@@ -8447,7 +8481,7 @@ CW.mods.landscape = function (ctx) {
       flyTo([pt.x + dir.x * 16, Math.max(14, camera.position.y * 0.6), pt.z + dir.z * 16],
         [pt.x, 1, pt.z], 1.0);
     } else {
-      /* 步行模式：平滑滑步到目标（保持人眼高度） */
+      /* 步行模式：平滑滑步到目标（保持人眼高度，遇楼自动停在楼前） */
       autoWalk = { p0: camera.position.clone(), p1: new THREE.Vector3(pt.x, 1.7, pt.z), t: 0, dur: 0.9 };
     }
   }
@@ -8457,12 +8491,16 @@ CW.mods.landscape = function (ctx) {
   });
   function tickRmb(dt) {
     if (autoWalk) {
-      autoWalk.t += dt / autoWalk.dur;
-      var t = Math.min(autoWalk.t, 1);
+      var t = Math.min(autoWalk.t + dt / autoWalk.dur, 1);
       var e2 = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-      camera.position.lerpVectors(autoWalk.p0, autoWalk.p1, e2);
-      camera.position.y = 1.7;
-      if (t >= 1) autoWalk = null;
+      var px = autoWalk.p0.x + (autoWalk.p1.x - autoWalk.p0.x) * e2;
+      var pz = autoWalk.p0.z + (autoWalk.p1.z - autoWalk.p0.z) * e2;
+      if (solidAt(px, pz, 0.8)) { autoWalk = null; toast('前面是楼，走不到更里面了'); }
+      else {
+        camera.position.x = px; camera.position.z = pz; camera.position.y = 1.7;
+        autoWalk.t = t;
+        if (t >= 1) autoWalk = null;
+      }
     }
     if (rmb.visible) {
       rmbT += dt * 3.2;
