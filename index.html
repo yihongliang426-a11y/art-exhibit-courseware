@@ -8447,6 +8447,10 @@ CW.mods.landscape = function (ctx) {
   }
   function buildArt(type, theme) {
     var g = new THREE.Group();
+    var pad = new THREE.Mesh(new THREE.CircleGeometry(1.25, 20),
+      new THREE.MeshStandardMaterial({ color: 0xe3dcc9, roughness: 0.95 }));
+    pad.rotation.x = -Math.PI / 2; pad.position.y = 0.025; pad.receiveShadow = true;
+    g.add(pad);
     var pal = THEMES[theme] || THEMES['我的奇思妙想'];
     var ENV = CW.__setEnv || function () {};
     var wood = new THREE.MeshStandardMaterial({ color: 0x9c6c43, roughness: 0.8 });
@@ -8686,6 +8690,11 @@ CW.mods.landscape = function (ctx) {
         } catch (e) { /* 跳过损坏条目 */ }
       });
       renderList();
+      if (state.items.length) {
+        setTimeout(function () {
+          toast('已载入上次保存的 ' + state.items.length + ' 件作品（本机浏览器存档）· 打开「开始摆放」可调整，或在工作台点「🗑 清空」重置', 6000);
+        }, 1200);
+      }
     } catch (e) { }
   }
 
@@ -9025,12 +9034,12 @@ CW.mods.landscape = function (ctx) {
     });
   })();
   var toastT = null;
-  function toast(s) {
+  function toast(s, ms) {
     var t = $('#toast');
     t.textContent = s;
     t.classList.add('show');
     clearTimeout(toastT);
-    toastT = setTimeout(function () { t.classList.remove('show'); }, 1900);
+    toastT = setTimeout(function () { t.classList.remove('show'); }, ms || 1900);
   }
   CW.state = state;
 
