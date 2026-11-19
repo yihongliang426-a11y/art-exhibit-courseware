@@ -8673,6 +8673,9 @@ CW.mods.landscape = function (ctx) {
     } catch (e) { }
   }
   function load() {
+    /* 不自动恢复历史布置：校园每次打开都是干净状态。
+       教师要保留布局用「💾导出/📂导入」JSON 文件（显式、可控、跨机器）。 */
+    return;
     try {
       var d = JSON.parse(localStorage.getItem('qts_art_items') || 'null');
       if (!d || !d.items) return;
