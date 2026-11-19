@@ -8447,8 +8447,9 @@ CW.mods.landscape = function (ctx) {
   }
   function buildArt(type, theme) {
     var g = new THREE.Group();
-    var pad = new THREE.Mesh(new THREE.CircleGeometry(1.25, 20),
-      new THREE.MeshStandardMaterial({ color: 0xe3dcc9, roughness: 0.95 }));
+    var tint = new THREE.Color(pal[2]).lerp(new THREE.Color(0xffffff), 0.55);
+    var pad = new THREE.Mesh(new THREE.CircleGeometry(0.95, 20),
+      new THREE.MeshStandardMaterial({ color: tint, roughness: 0.95 }));
     pad.rotation.x = -Math.PI / 2; pad.position.y = 0.025; pad.receiveShadow = true;
     g.add(pad);
     var pal = THEMES[theme] || THEMES['我的奇思妙想'];
